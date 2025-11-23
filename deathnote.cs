@@ -719,6 +719,7 @@ namespace deathnote
                 GUILayout.Label(GetUIDescriptionText(), _labelStyle);
             }
 
+            // ───── 여기부터: TextField + 깜빡이는 '|' 커서 ─────
             if (_justOpened)
             {
                 GUI.FocusControl("DeathNoteInput");
@@ -726,7 +727,30 @@ namespace deathnote
             }
 
             GUI.SetNextControlName("DeathNoteInput");
-            _inputName = GUILayout.TextField(_inputName, _textFieldStyle);
+            bool isFocused = (GUI.GetNameOfFocusedControl() == "DeathNoteInput");
+
+            string displayText = _inputName;
+
+            if (isFocused)
+            {
+                // 0.5초마다 ON/OFF
+                bool blinkOn = (Mathf.FloorToInt(Time.unscaledTime * 2f) % 2) == 0;
+                if (blinkOn)
+                {
+                    displayText = _inputName + "|";
+                }
+            }
+
+            string edited = GUILayout.TextField(displayText, _textFieldStyle);
+
+            // 실제 입력 값에는 '|'가 들어가지 않게 제거
+            if (isFocused && !string.IsNullOrEmpty(edited))
+            {
+                edited = edited.Replace("|", string.Empty);
+            }
+
+            _inputName = edited;
+            // ───── TextField + 깜빡이 커서 끝 ─────
 
             Event e = Event.current;
             bool submitByEnter =
