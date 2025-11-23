@@ -4,10 +4,11 @@ using System.Collections.Generic;
 using System.Reflection;
 using ItemStatsSystem;
 using UnityEngine;
-using Duckov;   // CharacterMainControl, Health
+using Duckov;
 
 namespace deathnote
 {
+    // Duckov 모드 로더 엔트리
     public class ModBehaviour : Duckov.Modding.ModBehaviour
     {
         protected override void OnAfterSetup()
@@ -34,7 +35,7 @@ namespace deathnote
         private static readonly BindingFlags BINDING_FLAGS =
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
 
-        // ───── 언어 설정 ─────
+        // ───── UI 언어 ─────
         private enum DeathNoteUILang
         {
             Korean,
@@ -73,11 +74,11 @@ namespace deathnote
             switch (GetUILang())
             {
                 case DeathNoteUILang.Japanese:
-                    return "ボスの名前を正確に入力して「作成」を押してください。";
+                    return "ボスの名前を正確に入力して「作成」を押してください.";
                 case DeathNoteUILang.English:
                     return "Enter the boss name exactly and press Write.";
                 default:
-                    // ★ 이 문장은 네가 기억해 달라고 한 그대로 유지
+                    // 한국어는 아래 Literal을 그대로 쓸 거라 여기서는 사용 안 함
                     return "보스 이름을 정확히 입력하고 작성을 누르세요.";
             }
         }
@@ -87,11 +88,11 @@ namespace deathnote
             switch (GetUILang())
             {
                 case DeathNoteUILang.Japanese:
-                    return "Insert: ノートを開く/閉じる   /   Esc: 閉じる";
+                    return "Insert: ノートを開く/閉じる   /   Enter: 作成   /   Esc: 閉じる";
                 case DeathNoteUILang.English:
-                    return "Insert: Open/Close the note   /   Esc: Close";
+                    return "Insert: Open/Close note   /   Enter: Write   /   Esc: Close";
                 default:
-                    return "Insert: 노트 열기/닫기   /   Esc: 닫기";
+                    return "Insert: 노트 열기/닫기   /   Enter: 작성   /   Esc: 닫기";
             }
         }
 
@@ -124,7 +125,7 @@ namespace deathnote
             new BossEntry { Input = "축구 주장",      Search = "축구 주장" },
             new BossEntry { Input = "폭주 아케이드",  Search = "폭주 아케이드" },
             new BossEntry { Input = "폭주 기계 거미", Search = "폭주 기계 거미" },
-            new BossEntry { Input = "???",            Search = "???" },
+            new BossEntry { Input = "???",            Search = "???"},
             new BossEntry { Input = "꼬마덕",         Search = "꼬마덕" },
             new BossEntry { Input = "비다",           Search = "비다" },
             new BossEntry { Input = "쓰리샷 형님",    Search = "쓰리샷 형님" },
@@ -195,7 +196,7 @@ namespace deathnote
             new BossEntry { Input = "レイダー",         Search = "レイダー" },
         };
 
-        // ───── UI 상태 ─────
+        // ───── UI / 상태 ─────
         private bool _uiVisible;
         private bool _uiActive;
         private Rect _windowRect;
@@ -207,14 +208,16 @@ namespace deathnote
         private GUIStyle _textFieldStyle;
         private GUIStyle _buttonStyle;
 
+        private GUIStyle _noteOuterStyle;
+        private GUIStyle _noteInnerStyle;
+
         private GUIStyle _bubbleBoxStyle;
         private GUIStyle _bubbleTextStyle;
 
-        private GUIStyle _noteOuterStyle;
-        private GUIStyle _noteInnerStyle;
+        private GUIStyle _cursorStyle;   // 가짜 커서용 스타일 (▲, 빨간색)
+
         private Texture2D _texBlack;
         private Texture2D _texWhite;
-
         private bool _stylesReady;
         private bool _justOpened;
 
@@ -222,18 +225,18 @@ namespace deathnote
         private Texture2D _skullTexture;
         private bool _skullSearched;
 
-        // 메뉴 포커스용
+        // 입력/카메라 차단용
         private MonoBehaviour _charInput;
         private MonoBehaviour _playerInput;
         private MonoBehaviour _cameraController;
-        private MonoBehaviour _cursorManager;
+        private CursorManager _cursorManager;
 
         // 예약된 죽음
         private Component _pendingTarget;
         private float _pendingTimer;
         private string _pendingName;
 
-        // 이미 죽인 보스 Health를 계속 "죽은 채"로 유지
+        // 이미 죽인 보스 Health 유지
         private readonly List<Health> _deadLockList = new List<Health>();
 
         private void Awake()
@@ -274,14 +277,14 @@ namespace deathnote
 
         private void LateUpdate()
         {
-            // UI가 활성화된 동안에는 커서를 계속 보이게 유지
+            // 노트 열려 있을 때는 항상 커서 잠금 해제 + 진짜 커서는 숨김 (가짜 커서만 그림)
             if (_uiActive)
             {
-                Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = false;
             }
 
-            // 이미 죽인 보스 HP가 다시 차지 않도록 매 프레임 잠금
+            // 죽인 보스 HP 다시 차지 않게 매 프레임 잠금
             if (_deadLockList.Count > 0)
             {
                 for (int i = _deadLockList.Count - 1; i >= 0; i--)
@@ -298,17 +301,13 @@ namespace deathnote
             }
         }
 
-        // ───── UI 토글/포커스 ─────
+        // ───── UI 토글 ─────
         private void ToggleUI()
         {
             if (_uiVisible)
-            {
                 CloseUI();
-            }
             else
-            {
                 OpenUI();
-            }
         }
 
         private void OpenUI()
@@ -332,10 +331,6 @@ namespace deathnote
                 return;
 
             _uiActive = true;
-
-            // 노트 열릴 때 커서 보이게 + 잠금 해제
-            Cursor.visible = true;
-            Cursor.lockState = CursorLockMode.None;
 
             try
             {
@@ -361,8 +356,25 @@ namespace deathnote
                         if (_playerInput == null && name == "PlayerInput")
                         {
                             _playerInput = mb;
-                            _playerInput.enabled = false;
-                            Debug.Log("[DeathNote] PlayerInput component disabled.");
+                            try
+                            {
+                                MethodInfo mDeactivate = t.GetMethod("DeactivateInput", BINDING_FLAGS);
+                                if (mDeactivate != null)
+                                {
+                                    mDeactivate.Invoke(_playerInput, null);
+                                    Debug.Log("[DeathNote] PlayerInput DeactivateInput() 호출 (game input blocked).");
+                                }
+                                else
+                                {
+                                    _playerInput.enabled = false;
+                                    Debug.Log("[DeathNote] PlayerInput component disabled (fallback).");
+                                }
+                            }
+                            catch (Exception exPi)
+                            {
+                                Debug.Log("[DeathNote] PlayerInput 비활성화 예외: " + exPi);
+                                _playerInput.enabled = false;
+                            }
                             continue;
                         }
 
@@ -374,23 +386,36 @@ namespace deathnote
                             Debug.Log("[DeathNote] Camera controller disabled: " + t.FullName);
                             continue;
                         }
-
-                        if (_cursorManager == null && name.Contains("CursorManager"))
-                        {
-                            _cursorManager = mb;
-                            _cursorManager.enabled = false;
-                            Debug.Log("[DeathNote] CursorManager disabled: " + t.FullName);
-                            continue;
-                        }
                     }
                 }
+
+                // 커서 잠금 해제 + 진짜 커서는 숨기고 (가짜 커서만 그림)
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = false;
+
+                try
+                {
+                    if (CursorManager.Instance != null)
+                    {
+                        _cursorManager = CursorManager.Instance;
+                        _cursorManager.enabled = false;
+                        Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+                        Debug.Log("[DeathNote] CursorManager.Instance disabled.");
+                    }
+                }
+                catch (Exception exCm)
+                {
+                    Debug.Log("[DeathNote] CursorManager disable 예외: " + exCm);
+                }
+
+                StartCoroutine(ForceCursorFree());
             }
             catch (Exception ex)
             {
                 Debug.Log("[DeathNote] EnterUIMode 예외: " + ex);
             }
 
-            Debug.Log("[DeathNote] UI 모드 진입 (입력/카메라 잠금 해제).");
+            Debug.Log("[DeathNote] UI 모드 진입 (입력/카메라 잠금 + 가짜 커서).");
         }
 
         private void ExitUIMode()
@@ -412,8 +437,27 @@ namespace deathnote
 
                 if (_playerInput != null)
                 {
-                    _playerInput.enabled = true;
-                    Debug.Log("[DeathNote] PlayerInput component re-enabled.");
+                    Type t = _playerInput.GetType();
+                    try
+                    {
+                        MethodInfo mActivate = t.GetMethod("ActivateInput", BINDING_FLAGS);
+                        if (mActivate != null)
+                        {
+                            mActivate.Invoke(_playerInput, null);
+                            Debug.Log("[DeathNote] PlayerInput ActivateInput() 호출 (game input restored).");
+                        }
+                        else
+                        {
+                            _playerInput.enabled = true;
+                            Debug.Log("[DeathNote] PlayerInput component re-enabled (fallback).");
+                        }
+                    }
+                    catch (Exception exPi)
+                    {
+                        Debug.Log("[DeathNote] PlayerInput 재활성화 예외: " + exPi);
+                        _playerInput.enabled = true;
+                    }
+
                     _playerInput = null;
                 }
 
@@ -430,14 +474,27 @@ namespace deathnote
                     Debug.Log("[DeathNote] CursorManager re-enabled.");
                     _cursorManager = null;
                 }
+
+                // 원래 게임 상태: 마우스 잠금 + 커서 숨김
+                Cursor.visible = false;
+                Cursor.lockState = CursorLockMode.Locked;
             }
             catch (Exception ex)
             {
                 Debug.Log("[DeathNote] ExitUIMode 예외: " + ex);
             }
 
-            // 여기서는 커서는 건드리지 않고, 게임 원래 로직에 맡김
             Debug.Log("[DeathNote] UI 모드 종료.");
+        }
+
+        private IEnumerator ForceCursorFree()
+        {
+            while (_uiActive)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = false; // 항상 숨기고, 우리는 가짜 커서만 그림
+                yield return null;
+            }
         }
 
         // ───── 이름 헬퍼 ─────
@@ -467,16 +524,16 @@ namespace deathnote
                 if (f != null)
                 {
                     object v = f.GetValue(obj);
-                    string s2 = v as string;
-                    if (!string.IsNullOrEmpty(s2)) return s2;
+                    string s = v as string;
+                    if (!string.IsNullOrEmpty(s)) return s;
                 }
 
                 PropertyInfo pName = t.GetProperty("Name", BINDING_FLAGS);
                 if (pName != null && pName.PropertyType == typeof(string))
                 {
                     object v = pName.GetValue(obj, null);
-                    string s3 = v as string;
-                    if (!string.IsNullOrEmpty(s3)) return s3;
+                    string s = v as string;
+                    if (!string.IsNullOrEmpty(s)) return s;
                 }
             }
             catch (Exception exFast)
@@ -486,10 +543,12 @@ namespace deathnote
 
             try
             {
-                FieldInfo[] allFields = t.GetFields(BINDING_FLAGS);
-                for (int i = 0; i < allFields.Length; i++)
+                FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
+                for (int i = 0; i < fields.Length; i++)
                 {
-                    FieldInfo f = allFields[i];
+                    FieldInfo f = fields[i];
+                    if (f == null) continue;
+
                     if (f.FieldType != typeof(string)) continue;
 
                     object v = f.GetValue(obj);
@@ -511,21 +570,21 @@ namespace deathnote
         {
             EnsureStyles();
 
-            if (!_uiVisible)
-            {
-                if (_pendingTarget != null && _pendingTimer > 0f)
-                {
-                    DrawTopLeftCountdown();
-                }
-            }
-            else
+            if (_uiVisible)
             {
                 DrawNoteUI();
             }
 
             if (_pendingTarget != null && _pendingTimer > 0f)
             {
+                DrawTopLeftCountdown();
                 DrawDeathBubble();
+            }
+
+            // 노트가 열려 있을 때는 항상 가짜 커서를 화면 위에 그리기
+            if (_uiActive)
+            {
+                DrawFakeCursor();
             }
         }
 
@@ -586,6 +645,11 @@ namespace deathnote
             _bubbleTextStyle.fontSize = 20;
             _bubbleTextStyle.normal.textColor = Color.white;
 
+            // 가짜 커서용 스타일 (▲) — 색은 항상 빨간색 유지
+            _cursorStyle = new GUIStyle(GUI.skin.label);
+            _cursorStyle.fontSize = 20;
+            _cursorStyle.normal.textColor = Color.red;
+
             _stylesReady = true;
         }
 
@@ -644,7 +708,16 @@ namespace deathnote
 
             GUILayout.Label(GetUITitleText(), _titleStyle);
             GUILayout.Space(8f);
-            GUILayout.Label(GetUIDescriptionText(), _labelStyle);
+
+            // ★ 네가 기억해 달라고 한 문구 - 한국어일 때는 Literal 그대로 사용
+            if (GetUILang() == DeathNoteUILang.Korean)
+            {
+                GUILayout.Label("보스 이름을 정확히 입력하고 작성을 누르세요.", _labelStyle);
+            }
+            else
+            {
+                GUILayout.Label(GetUIDescriptionText(), _labelStyle);
+            }
 
             if (_justOpened)
             {
@@ -752,6 +825,35 @@ namespace deathnote
             GUI.Label(labelRect, text, _bubbleTextStyle);
         }
 
+        // ───── 가짜 커서 그리기 ─────
+        private void DrawFakeCursor()
+        {
+            // IMGUI 좌표계로 마우스 위치 가져오기
+            Vector2 guiPos;
+
+            if (Event.current != null)
+            {
+                guiPos = Event.current.mousePosition;
+            }
+            else
+            {
+                Vector3 mp = Input.mousePosition;
+                guiPos = new Vector2(mp.x, Screen.height - mp.y);
+            }
+
+            float size = 20f;
+            Rect r = new Rect(
+                guiPos.x - size * 0.3f,
+                guiPos.y - size * 0.1f,
+                size,
+                size
+            );
+
+            // ★ 가짜 커서 색상은 항상 빨간색
+            _cursorStyle.normal.textColor = Color.red;
+            GUI.Label(r, "▲", _cursorStyle);
+        }
+
         // ───── 이름 입력 처리 ─────
         private void SubmitName()
         {
@@ -769,13 +871,20 @@ namespace deathnote
                 return;
             }
 
+            // 1단계: 우리가 가지고 있는 BossEntries 목록에서 매핑 시도
             string searchKeyword = ResolveBossSearchKeyword(normInput);
             if (string.IsNullOrEmpty(searchKeyword))
             {
-                Debug.Log("[DeathNote] BossEntries에 없는 이름: " + raw);
-                return;
+                // 2단계: 목록에 없으면, 그냥 입력한 글자를 그대로 검색키로 사용
+                searchKeyword = raw;
+                Debug.Log("[DeathNote] BossEntries에 없는 이름, 직접 검색 시도: " + raw);
+            }
+            else
+            {
+                Debug.Log("[DeathNote] BossEntries 매핑 사용: 입력=" + raw + " -> 검색키=" + searchKeyword);
             }
 
+            // 3단계: 현재 씬에서 해당 이름을 가진 보스 찾기
             Component target = FindBossByKeyword(searchKeyword);
             if (target == null)
             {
@@ -783,12 +892,14 @@ namespace deathnote
                 return;
             }
 
+            // 4단계: 10초 뒤 사망 예약
             _pendingTarget = target;
             _pendingName = raw;
             _pendingTimer = KILL_DELAY;
 
             Debug.Log("[DeathNote] " + raw + " 에게 " + KILL_DELAY + "초 후 사망 선고. (검색키=" + searchKeyword + ")");
 
+            // 노트는 자동으로 닫기
             if (_uiVisible)
                 CloseUI();
         }
@@ -820,23 +931,9 @@ namespace deathnote
             if (string.IsNullOrEmpty(normKey))
                 return null;
 
-            // 1) BossHealthHUD에서 이름 매치
-            Component fromHud = FindBossFromBossHealthHUD(normKey);
-            if (fromHud != null)
-                return fromHud;
-
-            // 2) BossHealthHUD에 등록된 아무 보스
-            Component anyFromHud = FindAnyBossFromBossHealthHUD();
-            if (anyFromHud != null)
-            {
-                string n = SafeGetNameFromObject(anyFromHud);
-                Debug.Log("[DeathNote] FindBossByKeyword: 이름 일치는 없지만 BossHealthHUD에서 보스 선택: " + n);
-                return anyFromHud;
-            }
-
-            // 3) 씬 전체 CharacterMainControl / Health 스캔
             List<string> debugNames = new List<string>();
 
+            // 1) CharacterMainControl 쪽에서 이름 찾기
             try
             {
                 CharacterMainControl[] chars =
@@ -867,6 +964,7 @@ namespace deathnote
                 Debug.Log("[DeathNote] FindBossByKeyword CharacterMainControl 예외: " + exChars);
             }
 
+            // 2) Health 쪽에서 이름 찾기
             try
             {
                 Health[] hs = UnityEngine.Object.FindObjectsOfType<Health>();
@@ -903,6 +1001,14 @@ namespace deathnote
                 Debug.Log("[DeathNote] FindBossByKeyword Health 예외: " + exHealth);
             }
 
+            // 3) BossHealthHUD에 등록된 보스에서 찾아보기 (HUD 연동)
+            Component fromHud = FindBossFromBossHealthHUD(searchKeyword, normKey);
+            if (fromHud != null)
+            {
+                return fromHud;
+            }
+
+            // 4) 여전히 못 찾았으면 디버그 로그 출력
             if (debugNames.Count > 0)
             {
                 Debug.Log("[DeathNote] FindBossByKeyword: 보스 미발견. 현재 감지된 이름 목록:");
@@ -919,7 +1025,8 @@ namespace deathnote
             return null;
         }
 
-        private Component FindBossFromBossHealthHUD(string normKey)
+        // ───── BossHealthHUD 연동: HUD에 잡힌 보스에서 찾아오기 ─────
+        private Component FindBossFromBossHealthHUD(string searchKeyword, string normKey)
         {
             try
             {
@@ -927,123 +1034,79 @@ namespace deathnote
                 if (all == null || all.Length == 0)
                     return null;
 
+                MonoBehaviour manager = null;
+
+                // bosshealthhud.BossHealthHUDManager 찾기
                 for (int i = 0; i < all.Length; i++)
                 {
                     MonoBehaviour mb = all[i];
                     if (mb == null) continue;
 
                     Type t = mb.GetType();
-                    string typeNameLower = t.Name.ToLowerInvariant();
-                    if (!typeNameLower.Contains("bosshealthhud"))
-                        continue;
-
-                    FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
-                    for (int f = 0; f < fields.Length; f++)
+                    if (t.Name == "BossHealthHUDManager")
                     {
-                        FieldInfo fi = fields[f];
-                        if (fi == null) continue;
+                        manager = mb;
+                        break;
+                    }
+                }
 
-                        Type ft = fi.FieldType;
-                        if (!typeof(IEnumerable).IsAssignableFrom(ft))
-                            continue;
+                if (manager == null)
+                    return null;
 
-                        if (!ft.IsGenericType)
-                            continue;
+                Type mt = manager.GetType();
+                FieldInfo fList = mt.GetField("_bossList", BINDING_FLAGS);
+                if (fList == null)
+                    return null;
 
-                        Type[] args = ft.GetGenericArguments();
-                        if (args == null || args.Length != 1 || args[0] != typeof(CharacterMainControl))
-                            continue;
+                object listObj = fList.GetValue(manager);
+                IList list = listObj as IList;
+                if (list == null || list.Count == 0)
+                    return null;
 
-                        object listObj = fi.GetValue(mb);
-                        if (listObj == null) continue;
+                List<string> names = new List<string>();
+                Component firstComp = null;
 
-                        IEnumerable enumerable = listObj as IEnumerable;
-                        if (enumerable == null) continue;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    object elem = list[i];
+                    if (elem == null) continue;
 
-                        foreach (object elem in enumerable)
+                    Component comp = elem as Component;
+                    if (comp == null) continue;
+                    if (firstComp == null)
+                        firstComp = comp;
+
+                    string name = SafeGetNameFromObject(elem);
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        names.Add(name);
+                        string normName = NormalizeName(name);
+                        if (normName.Contains(normKey) || normKey.Contains(normName))
                         {
-                            CharacterMainControl c = elem as CharacterMainControl;
-                            if (c == null) continue;
-
-                            string name = SafeGetNameFromObject(c);
-                            if (string.IsNullOrEmpty(name)) continue;
-
-                            string normName = NormalizeName(name);
-                            if (normName.Contains(normKey) || normKey.Contains(normName))
-                            {
-                                Debug.Log("[DeathNote] FindBossFromBossHealthHUD: " + t.Name + "." + fi.Name +
-                                          " 리스트에서 매치: " + name);
-                                return c;
-                            }
+                            Debug.Log("[DeathNote] FindBossFromBossHealthHUD: 이름 매치: " + name);
+                            return comp;
                         }
                     }
+                }
+
+                // 디버그용 후보 리스트 출력
+                if (names.Count > 0)
+                {
+                    Debug.Log("[DeathNote] FindAnyBossFromBossHealthHUD: 후보 보스: " +
+                              string.Join(", ", names.ToArray()));
+                }
+
+                // 이름은 안 맞았지만 HUD에 등록된 첫 번째 보스라도 반환 (최후 수단)
+                if (firstComp != null)
+                {
+                    Debug.Log("[DeathNote] FindBossFromBossHealthHUD: 이름 일치는 없지만 BossHealthHUD에서 보스 선택: " +
+                              SafeGetNameFromObject(firstComp));
+                    return firstComp;
                 }
             }
             catch (Exception ex)
             {
                 Debug.Log("[DeathNote] FindBossFromBossHealthHUD 예외: " + ex);
-            }
-
-            return null;
-        }
-
-        private Component FindAnyBossFromBossHealthHUD()
-        {
-            try
-            {
-                MonoBehaviour[] all = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
-                if (all == null || all.Length == 0)
-                    return null;
-
-                for (int i = 0; i < all.Length; i++)
-                {
-                    MonoBehaviour mb = all[i];
-                    if (mb == null) continue;
-
-                    Type t = mb.GetType();
-                    string typeNameLower = t.Name.ToLowerInvariant();
-                    if (!typeNameLower.Contains("bosshealthhud"))
-                        continue;
-
-                    FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
-                    for (int f = 0; f < fields.Length; f++)
-                    {
-                        FieldInfo fi = fields[f];
-                        if (fi == null) continue;
-
-                        Type ft = fi.FieldType;
-                        if (!typeof(IEnumerable).IsAssignableFrom(ft))
-                            continue;
-
-                        if (!ft.IsGenericType)
-                            continue;
-
-                        Type[] args = ft.GetGenericArguments();
-                        if (args == null || args.Length != 1 || args[0] != typeof(CharacterMainControl))
-                            continue;
-
-                        object listObj = fi.GetValue(mb);
-                        if (listObj == null) continue;
-
-                        IEnumerable enumerable = listObj as IEnumerable;
-                        if (enumerable == null) continue;
-
-                        foreach (object elem in enumerable)
-                        {
-                            CharacterMainControl c = elem as CharacterMainControl;
-                            if (c == null) continue;
-
-                            string name = SafeGetNameFromObject(c);
-                            Debug.Log("[DeathNote] FindAnyBossFromBossHealthHUD: 후보 보스: " + name +
-                                      " (" + t.Name + "." + fi.Name + ")");
-                            return c;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] FindAnyBossFromBossHealthHUD 예외: " + ex);
             }
 
             return null;
@@ -1063,14 +1126,6 @@ namespace deathnote
 
             try
             {
-                // 1) DamageReceiver 시도
-                if (KillViaDamageReceiver(target))
-                {
-                    Debug.Log("[DeathNote] DamageReceiver 기반 처치 시도 완료: " + name);
-                    killed = true;
-                }
-
-                // 2) Health 리플렉션
                 health = FindHealthForTarget(target);
                 if (health != null)
                 {
@@ -1082,9 +1137,8 @@ namespace deathnote
                     }
                 }
 
-                // 3) CharacterMainControl 리플렉션
                 CharacterMainControl cmc = target as CharacterMainControl;
-                if (cmc != null)
+                if (cmc != null && !killed)
                 {
                     bool done2 = KillByCharacterReflection(cmc);
                     if (done2)
@@ -1094,23 +1148,18 @@ namespace deathnote
                     }
                 }
 
-                // 4) 죽음 이벤트/메서드 강제 호출 + 시체 동결 + 데드락 등록
                 if (killed)
                 {
                     if (health != null)
                     {
-                        FireHealthOnDeadEvent(health);
-                    }
-
-                    bool called = CallDeathMethodsOnAttachedComponents(target, health);
-                    Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents 호출됨, anyCalled=" + called);
-
-                    FreezeCorpseComponents(target);
-
-                    if (health != null)
-                    {
                         AddDeadLockHealth(health);
                     }
+
+                    // 전리품/사망 처리 관련 메서드들을 한 번 더 호출 시도
+                    CallDeathMethodsOnAttachedComponents(target);
+
+                    // 시체가 계속 움직이는 것처럼 보이지 않도록 동결
+                    FreezeCorpseComponents(target);
                 }
                 else
                 {
@@ -1167,107 +1216,314 @@ namespace deathnote
             return null;
         }
 
-        // ───── DamageReceiver 경유 처치 ─────
-        private bool KillViaDamageReceiver(Component target)
+        // ─────────────────────────────────────────────
+        // DuckovMenu와 같은 방식으로 Health.Hurt(...)를 호출해서
+        // "정상적인 데미지/사망 처리"를 타게 만드는 함수 (전리품 드랍용)
+        // ─────────────────────────────────────────────
+        private bool TryKillWithHurt(Health health)
         {
-            if (target == null) return false;
-
-            Health targetHealth = FindHealthForTarget(target);
-            GameObject go = target.gameObject;
-            if (go == null) return false;
-
-            Component[] compsChildren = go.GetComponentsInChildren<Component>(true);
-            Component[] compsParents = go.GetComponentsInParent<Component>(true);
-
-            bool anySuccess = false;
-
-            anySuccess |= TryKillViaDamageReceiverList(compsChildren, targetHealth);
-            if (anySuccess) return true;
-
-            anySuccess |= TryKillViaDamageReceiverList(compsParents, targetHealth);
-            return anySuccess;
-        }
-
-        private bool TryKillViaDamageReceiverList(Component[] comps, Health targetHealth)
-        {
-            if (comps == null || comps.Length == 0) return false;
-
-            for (int i = 0; i < comps.Length; i++)
-            {
-                Component c = comps[i];
-                if (c == null) continue;
-
-                Type ct = c.GetType();
-                string tn = ct.Name.ToLowerInvariant();
-                if (!tn.Contains("damagereceiver"))
-                    continue;
-
-                if (TryInvokeDamageOnReceiver(c, targetHealth))
-                    return true;
-            }
-
-            return false;
-        }
-
-        private bool TryInvokeDamageOnReceiver(Component receiver, Health targetHealth)
-        {
-            if (receiver == null) return false;
-
-            Type rt = receiver.GetType();
-            bool sameHealth = false;
+            if (health == null) return false;
 
             try
             {
-                FieldInfo[] rfields = rt.GetFields(BINDING_FLAGS);
-                for (int i = 0; i < rfields.Length; i++)
-                {
-                    FieldInfo f = rfields[i];
-                    if (f == null) continue;
+                Type type = health.GetType();
 
-                    if (f.FieldType == typeof(Health))
+                // CurrentHealth 프로퍼티(있으면 나중에 1로 세팅해서 확실히 죽이기)
+                PropertyInfo propCurrentHealth = type.GetProperty("CurrentHealth", BINDING_FLAGS);
+                if (propCurrentHealth == null)
+                {
+                    propCurrentHealth = type.GetProperty("CurrentHealth");
+                }
+
+                bool success = false;
+
+                // 우선 Hurt 메서드를 찾는다
+                MethodInfo hurt = type.GetMethod("Hurt", BINDING_FLAGS);
+                if (hurt == null)
+                {
+                    hurt = type.GetMethod("Hurt");
+                }
+
+                if (hurt != null)
+                {
+                    ParameterInfo[] ps = hurt.GetParameters();
+
+                    // 1) Hurt(DamageInfo) 타입인 경우
+                    if (ps.Length == 1 && ps[0].ParameterType.Name == "DamageInfo")
                     {
-                        object v = f.GetValue(receiver);
-                        if (v == (object)targetHealth && v != null)
+                        Type damageType = ps[0].ParameterType;
+                        object dmgInfo = Activator.CreateInstance(damageType);
+
+                        // 데미지 값 크게
+                        FieldInfo fDamageValue = damageType.GetField("damageValue", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fDamageValue != null)
                         {
-                            sameHealth = true;
-                            break;
+                            if (fDamageValue.FieldType == typeof(float)) fDamageValue.SetValue(dmgInfo, 99999f);
+                            else if (fDamageValue.FieldType == typeof(int)) fDamageValue.SetValue(dmgInfo, 99999);
                         }
+
+                        FieldInfo fFinalDamage = damageType.GetField("finalDamage", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fFinalDamage != null)
+                        {
+                            if (fFinalDamage.FieldType == typeof(float)) fFinalDamage.SetValue(dmgInfo, 99999f);
+                            else if (fFinalDamage.FieldType == typeof(int)) fFinalDamage.SetValue(dmgInfo, 99999);
+                        }
+
+                        // fromCharacter = 플레이어
+                        FieldInfo fFromChar = damageType.GetField("fromCharacter", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fFromChar != null)
+                        {
+                            CharacterMainControl mainChar = FindMainCharacter();
+                            if (mainChar != null && fFromChar.FieldType.IsAssignableFrom(mainChar.GetType()))
+                            {
+                                fFromChar.SetValue(dmgInfo, mainChar);
+                            }
+                        }
+
+                        // ignoreArmor / ignoreDifficulty
+                        FieldInfo fIgnoreArmor = damageType.GetField("ignoreArmor", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fIgnoreArmor != null && fIgnoreArmor.FieldType == typeof(bool))
+                        {
+                            fIgnoreArmor.SetValue(dmgInfo, true);
+                        }
+
+                        FieldInfo fIgnoreDiff = damageType.GetField("ignoreDifficulty", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fIgnoreDiff != null && fIgnoreDiff.FieldType == typeof(bool))
+                        {
+                            fIgnoreDiff.SetValue(dmgInfo, true);
+                        }
+
+                        // damagePoint = 보스 위치
+                        FieldInfo fDamagePoint = damageType.GetField("damagePoint", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fDamagePoint != null && fDamagePoint.FieldType == typeof(Vector3))
+                        {
+                            Vector3 point = Vector3.zero;
+                            try
+                            {
+                                point = health.transform.position;
+                            }
+                            catch
+                            {
+                            }
+                            fDamagePoint.SetValue(dmgInfo, point);
+                        }
+
+                        // elementFactors 같은 추가 필드 있으면 기본 인스턴스 만들어 넣기
+                        FieldInfo fElementFactors = damageType.GetField("elementFactors", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (fElementFactors != null)
+                        {
+                            try
+                            {
+                                Type efType = fElementFactors.FieldType;
+                                if (efType != null && efType.GetConstructor(Type.EmptyTypes) != null)
+                                {
+                                    object efInstance = Activator.CreateInstance(efType);
+                                    fElementFactors.SetValue(dmgInfo, efInstance);
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+
+                        hurt.Invoke(health, new object[] { dmgInfo });
+                        Debug.Log("[DeathNote] TryKillWithHurt: Hurt(DamageInfo) 호출 성공");
+                        success = true;
+                    }
+                    // 2) Hurt( float / int ) 한 개짜리
+                    else if (ps.Length == 1)
+                    {
+                        object dmg = null;
+                        if (ps[0].ParameterType == typeof(float))
+                            dmg = 99999f;
+                        else if (ps[0].ParameterType == typeof(int))
+                            dmg = 99999;
+
+                        if (dmg != null)
+                        {
+                            hurt.Invoke(health, new object[] { dmg });
+                            Debug.Log("[DeathNote] TryKillWithHurt: Hurt(bigDamage) 호출 성공");
+                            success = true;
+                        }
+                    }
+                    // 3) Hurt(dmg, something)
+                    else if (ps.Length == 2)
+                    {
+                        object[] args = new object[2];
+                        if (ps[0].ParameterType == typeof(float))
+                            args[0] = 99999f;
+                        else if (ps[0].ParameterType == typeof(int))
+                            args[0] = 99999;
+                        else
+                            args[0] = null;
+
+                        args[1] = null;
+                        hurt.Invoke(health, args);
+                        Debug.Log("[DeathNote] TryKillWithHurt: Hurt(dmg, null) 호출 시도");
+                        success = true;
+                    }
+                    // 4) Hurt(dmg, ..., Vector3.zero, ...)
+                    else if (ps.Length >= 3)
+                    {
+                        object[] args = new object[ps.Length];
+                        if (ps[0].ParameterType == typeof(float))
+                            args[0] = 99999f;
+                        else if (ps[0].ParameterType == typeof(int))
+                            args[0] = 99999;
+                        else
+                            args[0] = null;
+
+                        args[1] = null;
+                        args[2] = Vector3.zero;
+                        for (int i = 3; i < ps.Length; i++)
+                        {
+                            args[i] = Type.Missing;
+                        }
+                        hurt.Invoke(health, args);
+                        Debug.Log("[DeathNote] TryKillWithHurt: Hurt(dmg, ...) 호출 시도");
+                        success = true;
                     }
                 }
 
-                if (!sameHealth && targetHealth != null)
+                // 위에서 실패했고, CurrentHealth를 쓸 수 있다면
+                // CurrentHealth를 1로 만들어 놓고 "작은 데미지"로 한 번 더 Hurt 호출
+                if (!success && propCurrentHealth != null && propCurrentHealth.CanWrite)
                 {
-                    PropertyInfo[] rprops = rt.GetProperties(BINDING_FLAGS);
-                    for (int i = 0; i < rprops.Length; i++)
+                    try
                     {
-                        PropertyInfo p = rprops[i];
-                        if (p == null || !p.CanRead) continue;
+                        Type chType = propCurrentHealth.PropertyType;
+                        if (chType == typeof(float))
+                            propCurrentHealth.SetValue(health, 1f, null);
+                        else if (chType == typeof(int))
+                            propCurrentHealth.SetValue(health, 1, null);
 
-                        if (p.PropertyType == typeof(Health))
+                        MethodInfo hurt2 = type.GetMethod("Hurt", BINDING_FLAGS);
+                        if (hurt2 == null)
+                            hurt2 = type.GetMethod("Hurt");
+
+                        if (hurt2 != null)
                         {
-                            object v = p.GetValue(receiver, null);
-                            if (v == (object)targetHealth && v != null)
+                            ParameterInfo[] ps2 = hurt2.GetParameters();
+                            if (ps2.Length == 1 && ps2[0].ParameterType.Name == "DamageInfo")
                             {
-                                sameHealth = true;
-                                break;
+                                Type damageType2 = ps2[0].ParameterType;
+                                object dmg2 = Activator.CreateInstance(damageType2);
+
+                                FieldInfo fdv = damageType2.GetField("damageValue", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                                if (fdv != null)
+                                {
+                                    if (fdv.FieldType == typeof(float))
+                                        fdv.SetValue(dmg2, 1f);
+                                    else if (fdv.FieldType == typeof(int))
+                                        fdv.SetValue(dmg2, 1);
+                                }
+
+                                FieldInfo ffd = damageType2.GetField("finalDamage", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                                if (ffd != null)
+                                {
+                                    if (ffd.FieldType == typeof(float))
+                                        ffd.SetValue(dmg2, 1f);
+                                    else if (ffd.FieldType == typeof(int))
+                                        ffd.SetValue(dmg2, 1);
+                                }
+
+                                FieldInfo fdp = damageType2.GetField("damagePoint", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                                if (fdp != null && fdp.FieldType == typeof(Vector3))
+                                {
+                                    Vector3 point = Vector3.zero;
+                                    try { point = health.transform.position; } catch { }
+                                    fdp.SetValue(dmg2, point);
+                                }
+
+                                hurt2.Invoke(health, new object[] { dmg2 });
                             }
+                            else if (ps2.Length >= 1)
+                            {
+                                object[] args = new object[ps2.Length];
+                                if (ps2[0].ParameterType == typeof(float))
+                                    args[0] = 1f;
+                                else if (ps2[0].ParameterType == typeof(int))
+                                    args[0] = 1;
+                                else
+                                    args[0] = null;
+
+                                for (int i = 1; i < ps2.Length; i++)
+                                {
+                                    args[i] = Type.Missing;
+                                }
+
+                                hurt2.Invoke(health, args);
+                            }
+
+                            Debug.Log("[DeathNote] TryKillWithHurt: 최종 Hurt 호출 성공 (1 damage)");
+                            success = true;
                         }
+                    }
+                    catch (Exception ex2)
+                    {
+                        Debug.Log("[DeathNote] TryKillWithHurt 최종 시도 예외: " + ex2);
+                    }
+                }
+
+                if (!success)
+                {
+                    Debug.Log("[DeathNote] TryKillWithHurt: Hurt 기반 킬 실패 (Hurt 메서드 없음?)");
+                }
+
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Debug.Log("[DeathNote] TryKillWithHurt 예외: " + ex);
+                return false;
+            }
+        }
+
+        // ───── Health 강제 킬 ─────
+        private bool KillByHealthReflection(Health health)
+        {
+            if (health == null) return false;
+
+            // ★ 0단계: Hurt 기반 정상 데미지 사망 시도 (전리품/OnDead 루틴 타게)
+            if (TryKillWithHurt(health))
+            {
+                return true;
+            }
+
+            Type t = health.GetType();
+            bool changed = false;
+
+            // 1) Kill/Die 계열 메서드 (파라미터 없음)
+            try
+            {
+                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
+                for (int i = 0; i < methods.Length; i++)
+                {
+                    MethodInfo m = methods[i];
+                    if (m == null) continue;
+                    if (m.IsSpecialName) continue;
+                    if (m.GetParameters().Length != 0) continue;
+
+                    string ln = m.Name.ToLowerInvariant();
+                    if (ln.Contains("kill") || ln.Contains("die") ||
+                        ln.Contains("death") || ln.Contains("dead"))
+                    {
+                        Debug.Log("[DeathNote] KillByHealthReflection: 메서드 호출 -> " +
+                                  t.Name + "." + m.Name + "()");
+                        m.Invoke(health, null);
+                        return true;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.Log("[DeathNote] TryInvokeDamageOnReceiver Health 매칭 예외: " + ex);
+                Debug.Log("[DeathNote] KillByHealthReflection direct method 예외: " + ex);
             }
 
-            CharacterMainControl mainChar = FindMainCharacter();
-
+            // 2) 데미지 계열 메서드 (파라미터 하나, int/float)
             try
             {
-                MethodInfo chosenMethod = null;
-                Type damageInfoType = null;
-
-                MethodInfo[] methods = rt.GetMethods(BINDING_FLAGS);
+                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
                 for (int i = 0; i < methods.Length; i++)
                 {
                     MethodInfo m = methods[i];
@@ -1275,326 +1531,220 @@ namespace deathnote
                     if (m.IsSpecialName) continue;
 
                     ParameterInfo[] ps = m.GetParameters();
-                    if (ps == null || ps.Length < 1 || ps.Length > 2)
+                    if (ps == null || ps.Length != 1)
                         continue;
 
-                    string mn = m.Name.ToLowerInvariant();
-                    bool looksLikeDamage =
-                        mn.Contains("damage") || mn.Contains("hit") || mn.Contains("attack");
-
-                    if (!looksLikeDamage)
+                    string ln = m.Name.ToLowerInvariant();
+                    if (!(ln.Contains("damage") || ln.Contains("hit")))
                         continue;
 
-                    for (int pIndex = 0; pIndex < ps.Length; pIndex++)
+                    Type ptParam = ps[0].ParameterType;
+                    object big;
+                    if (ptParam == typeof(int))
+                        big = 999999;
+                    else if (ptParam == typeof(float))
+                        big = 999999f;
+                    else
+                        continue;
+
+                    Debug.Log("[DeathNote] KillByHealthReflection: 데미지 메서드 호출 -> " +
+                              t.Name + "." + m.Name + "(" + big + ")");
+                    m.Invoke(health, new object[] { big });
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.Log("[DeathNote] KillByHealthReflection damage method 예외: " + ex);
+            }
+
+            // 3) 프로퍼티/필드 직접 조작
+            try
+            {
+                PropertyInfo[] props = t.GetProperties(BINDING_FLAGS);
+                for (int i = 0; i < props.Length; i++)
+                {
+                    PropertyInfo p = props[i];
+                    if (p == null || !p.CanWrite) continue;
+
+                    Type pt = p.PropertyType;
+                    string n = p.Name.ToLowerInvariant();
+
+                    if (pt == typeof(bool))
                     {
-                        Type pt = ps[pIndex].ParameterType;
-                        string ptName = pt.Name.ToLowerInvariant();
-                        if (ptName.Contains("damageinfo"))
+                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
                         {
-                            chosenMethod = m;
-                            damageInfoType = pt;
-                            break;
+                            p.SetValue(health, true, null);
+                            changed = true;
+                            Debug.Log("[DeathNote] KillByHealthReflection: bool 프로퍼티 true -> " +
+                                      t.Name + "." + p.Name);
+                        }
+                        else if (n.Contains("alive"))
+                        {
+                            p.SetValue(health, false, null);
+                            changed = true;
+                            Debug.Log("[DeathNote] KillByHealthReflection: bool 프로퍼티 false -> " +
+                                      t.Name + "." + p.Name);
                         }
                     }
-
-                    if (chosenMethod != null)
-                        break;
-                }
-
-                if (chosenMethod == null || damageInfoType == null)
-                {
-                    Debug.Log("[DeathNote] TryInvokeDamageOnReceiver: DamageInfo 유사 메서드를 찾지 못함 (" + rt.Name + ")");
-                    return false;
-                }
-
-                object dmg = Activator.CreateInstance(damageInfoType);
-
-                try
-                {
-                    FieldInfo[] dfs = damageInfoType.GetFields(BINDING_FLAGS);
-                    for (int i = 0; i < dfs.Length; i++)
+                    else if (pt == typeof(int) || pt == typeof(float))
                     {
-                        FieldInfo f = dfs[i];
-                        if (f == null) continue;
-
-                        Type ft = f.FieldType;
-                        string fn = f.Name.ToLowerInvariant();
-
-                        if (typeof(CharacterMainControl).IsAssignableFrom(ft) || fn.Contains("fromcharacter"))
-                        {
-                            if (mainChar != null)
-                            {
-                                f.SetValue(dmg, mainChar);
-                            }
-                            continue;
-                        }
-
-                        if (typeof(Component).IsAssignableFrom(ft) && fn.Contains("receiver"))
-                        {
-                            f.SetValue(dmg, receiver);
-                            continue;
-                        }
-
-                        if (ft == typeof(Health) && targetHealth != null && fn.Contains("health"))
-                        {
-                            f.SetValue(dmg, targetHealth);
-                            continue;
-                        }
-
-                        if ((ft == typeof(int) || ft == typeof(float)) &&
-                            (fn.Contains("damage") || fn.Contains("dmg") || fn.Contains("amount")))
-                        {
-                            if (ft == typeof(int))
-                                f.SetValue(dmg, 999999);
-                            else
-                                f.SetValue(dmg, 999999f);
-                            continue;
-                        }
-                    }
-
-                    PropertyInfo[] dps = damageInfoType.GetProperties(BINDING_FLAGS);
-                    for (int i = 0; i < dps.Length; i++)
-                    {
-                        PropertyInfo p = dps[i];
-                        if (p == null || !p.CanWrite) continue;
-
-                        Type pt = p.PropertyType;
-                        string pn = p.Name.ToLowerInvariant();
-
-                        if (typeof(CharacterMainControl).IsAssignableFrom(pt) || pn.Contains("fromcharacter"))
-                        {
-                            if (mainChar != null)
-                            {
-                                p.SetValue(dmg, mainChar, null);
-                            }
-                            continue;
-                        }
-
-                        if (typeof(Component).IsAssignableFrom(pt) && pn.Contains("receiver"))
-                        {
-                            p.SetValue(dmg, receiver, null);
-                            continue;
-                        }
-
-                        if (pt == typeof(Health) && targetHealth != null && pn.Contains("health"))
-                        {
-                            p.SetValue(dmg, targetHealth, null);
-                            continue;
-                        }
-
-                        if ((pt == typeof(int) || pt == typeof(float)) &&
-                            (pn.Contains("damage") || pn.Contains("dmg") || pn.Contains("amount")))
+                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
+                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
                         {
                             if (pt == typeof(int))
-                                p.SetValue(dmg, 999999, null);
+                                p.SetValue(health, -1, null);
                             else
-                                p.SetValue(dmg, 999999f, null);
-                            continue;
+                                p.SetValue(health, -1f, null);
+
+                            changed = true;
+                            Debug.Log("[DeathNote] KillByHealthReflection: hp/health 프로퍼티 -1 -> " +
+                                      t.Name + "." + p.Name);
                         }
                     }
                 }
-                catch (Exception exSet)
+
+                FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
+                for (int i = 0; i < fields.Length; i++)
                 {
-                    Debug.Log("[DeathNote] TryInvokeDamageOnReceiver DamageInfo 셋업 예외: " + exSet);
+                    FieldInfo f = fields[i];
+                    if (f == null) continue;
+
+                    Type ft = f.FieldType;
+                    string n = f.Name.ToLowerInvariant();
+
+                    if (ft == typeof(bool))
+                    {
+                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
+                        {
+                            f.SetValue(health, true);
+                            changed = true;
+                            Debug.Log("[DeathNote] KillByHealthReflection: bool 필드 true -> " +
+                                      t.Name + "." + f.Name);
+                        }
+                        else if (n.Contains("alive"))
+                        {
+                            f.SetValue(health, false);
+                            changed = true;
+                            Debug.Log("[DeathNote] KillByHealthReflection: bool 필드 false -> " +
+                                      t.Name + "." + f.Name);
+                        }
+                    }
                 }
 
-                Debug.Log("[DeathNote] KillViaDamageReceiver: " + rt.Name + "." + chosenMethod.Name +
-                          "(" + damageInfoType.Name + ") 호출 시도");
-                chosenMethod.Invoke(receiver, new object[] { dmg });
-                return true;
+                for (int i = 0; i < fields.Length; i++)
+                {
+                    FieldInfo f = fields[i];
+                    if (f == null) continue;
+
+                    Type ft = f.FieldType;
+                    string n = f.Name.ToLowerInvariant();
+
+                    if (ft == typeof(int) || ft == typeof(float))
+                    {
+                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
+                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
+                        {
+                            if (ft == typeof(int))
+                                f.SetValue(health, -1);
+                            else
+                                f.SetValue(health, -1f);
+
+                            changed = true;
+                            Debug.Log("[DeathNote] KillByHealthReflection: hp/health 필드 -1 -> " +
+                                      t.Name + "." + f.Name);
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
-                Debug.Log("[DeathNote] TryInvokeDamageOnReceiver 예외: " + ex);
-                return false;
+                Debug.Log("[DeathNote] KillByHealthReflection 필드/프로퍼티 조작 예외: " + ex);
             }
+
+            return changed;
         }
 
-        // ───── Health.OnDead 수동 발사 ─────
-        private void FireHealthOnDeadEvent(Health health)
+        // ───── CharacterMainControl 강제 킬 (보조용) ─────
+        private bool KillByCharacterReflection(CharacterMainControl character)
         {
-            if (health == null) return;
+            if (character == null) return false;
+
+            Type t = character.GetType();
+            bool changed = false;
 
             try
             {
-                Type t = typeof(Health);
-
-                FieldInfo fi = t.GetField("OnDead",
-                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                if (fi == null)
+                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
+                for (int i = 0; i < methods.Length; i++)
                 {
-                    Debug.Log("[DeathNote] FireHealthOnDeadEvent: Health.OnDead 필드를 찾지 못함.");
-                    return;
-                }
+                    MethodInfo m = methods[i];
+                    if (m == null) continue;
+                    if (m.IsSpecialName) continue;
+                    if (m.GetParameters().Length != 0) continue;
 
-                Delegate del = fi.GetValue(null) as Delegate;
-                if (del == null)
-                {
-                    Debug.Log("[DeathNote] FireHealthOnDeadEvent: Health.OnDead에 리스너 없음.");
-                    return;
-                }
-
-                MethodInfo invoke = del.GetType().GetMethod("Invoke");
-                if (invoke == null)
-                {
-                    Debug.Log("[DeathNote] FireHealthOnDeadEvent: Invoke 메서드를 찾지 못함.");
-                    return;
-                }
-
-                ParameterInfo[] ps = invoke.GetParameters();
-                object[] args = new object[ps.Length];
-
-                for (int i = 0; i < ps.Length; i++)
-                {
-                    Type pt = ps[i].ParameterType;
-
-                    if (typeof(Health).IsAssignableFrom(pt))
+                    string ln = m.Name.ToLowerInvariant();
+                    if (ln.Contains("kill") || ln.Contains("die") ||
+                        ln.Contains("death") || ln.Contains("dead"))
                     {
-                        args[i] = health;
-                    }
-                    else if (pt == typeof(bool))
-                    {
-                        args[i] = true;
-                    }
-                    else if (pt == typeof(int))
-                    {
-                        args[i] = 1;
-                    }
-                    else if (pt == typeof(float))
-                    {
-                        args[i] = 1f;
-                    }
-                    else
-                    {
-                        try
-                        {
-                            args[i] = Activator.CreateInstance(pt);
-                        }
-                        catch
-                        {
-                            args[i] = null;
-                        }
+                        Debug.Log("[DeathNote] KillByCharacterReflection: 메서드 호출 -> " +
+                                  t.Name + "." + m.Name + "()");
+                        m.Invoke(character, null);
+                        return true;
                     }
                 }
-
-                Debug.Log("[DeathNote] FireHealthOnDeadEvent: Health.OnDead 수동 호출 시도");
-                del.DynamicInvoke(args);
             }
             catch (Exception ex)
             {
-                Debug.Log("[DeathNote] FireHealthOnDeadEvent 예외: " + ex);
+                Debug.Log("[DeathNote] KillByCharacterReflection direct method 예외: " + ex);
             }
-        }
-
-        // ───── 보스에 붙은 Die/OnDead 메서드 호출 ─────
-        private bool CallDeathMethodsOnAttachedComponents(Component target, Health targetHealth)
-        {
-            if (target == null) return false;
-            GameObject go = target.gameObject;
-            if (go == null) return false;
-
-            bool called = false;
 
             try
             {
-                MonoBehaviour[] comps = go.GetComponentsInChildren<MonoBehaviour>(true);
-                if (comps == null || comps.Length == 0)
-                    return false;
-
-                for (int i = 0; i < comps.Length; i++)
+                PropertyInfo[] props = t.GetProperties(BINDING_FLAGS);
+                for (int i = 0; i < props.Length; i++)
                 {
-                    MonoBehaviour mb = comps[i];
-                    if (mb == null) continue;
+                    PropertyInfo p = props[i];
+                    if (p == null || !p.CanWrite) continue;
 
-                    Type t = mb.GetType();
-                    MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
-                    for (int m = 0; m < methods.Length; m++)
+                    Type pt = p.PropertyType;
+                    string n = p.Name.ToLowerInvariant();
+
+                    if (pt == typeof(bool))
                     {
-                        MethodInfo mi = methods[m];
-                        if (mi == null) continue;
-                        if (mi.IsSpecialName) continue;
-
-                        ParameterInfo[] ps = mi.GetParameters();
-                        string ln = mi.Name.ToLowerInvariant();
-
-                        bool looksLikeDeath =
-                            ln.Contains("die") ||
-                            ln.Contains("dead") ||
-                            ln.Contains("death") ||
-                            ln.Contains("ondead") ||
-                            ln.Contains("ondeath") ||
-                            ln.Contains("kill");
-
-                        if (!looksLikeDeath)
-                            continue;
-
-                        object[] args = null;
-
-                        if (ps == null || ps.Length == 0)
+                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
                         {
-                            args = null;
+                            p.SetValue(character, true, null);
+                            changed = true;
                         }
-                        else if (ps.Length == 1)
-                        {
-                            Type pt = ps[0].ParameterType;
-                            object arg = null;
+                    }
+                }
 
-                            if (pt == typeof(bool))
-                            {
-                                arg = true;
-                            }
-                            else if (pt == typeof(int))
-                            {
-                                arg = 1;
-                            }
-                            else if (pt == typeof(float))
-                            {
-                                arg = 1f;
-                            }
-                            else if (typeof(Health).IsAssignableFrom(pt) && targetHealth != null)
-                            {
-                                arg = targetHealth;
-                            }
-                            else
-                            {
-                                try
-                                {
-                                    arg = Activator.CreateInstance(pt);
-                                }
-                                catch
-                                {
-                                    arg = null;
-                                }
-                            }
+                FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
+                for (int i = 0; i < fields.Length; i++)
+                {
+                    FieldInfo f = fields[i];
+                    if (f == null) continue;
 
-                            args = new object[] { arg };
-                        }
-                        else
-                        {
-                            continue;
-                        }
+                    Type ft = f.FieldType;
+                    string n = f.Name.ToLowerInvariant();
 
-                        try
+                    if (ft == typeof(bool))
+                    {
+                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
                         {
-                            Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents: " +
-                                      t.Name + "." + mi.Name + " 호출");
-                            mi.Invoke(mb, args);
-                            called = true;
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents 예외(" +
-                                      t.Name + "." + mi.Name + "): " + ex);
+                            f.SetValue(character, true);
+                            changed = true;
                         }
                     }
                 }
             }
-            catch (Exception exOuter)
+            catch (Exception ex)
             {
-                Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents 전체 예외: " + exOuter);
+                Debug.Log("[DeathNote] KillByCharacterReflection 필드/프로퍼티 조작 예외: " + ex);
             }
 
-            return called;
+            return changed;
         }
 
         // ───── 시체 움직임 동결 ─────
@@ -1646,65 +1796,70 @@ namespace deathnote
                         Debug.Log("[DeathNote] FreezeCorpse: CharacterController disabled - " + cc.gameObject.name);
                     }
                 }
-
-                MonoBehaviour[] mbs = go.GetComponentsInChildren<MonoBehaviour>(true);
-                if (mbs != null)
-                {
-                    for (int i = 0; i < mbs.Length; i++)
-                    {
-                        MonoBehaviour mb = mbs[i];
-                        if (mb == null) continue;
-
-                        Type t = mb.GetType();
-                        string ln = t.Name.ToLowerInvariant();
-
-                        bool looksLikeMover =
-                            ln.Contains("navmesh") ||
-                            ln.Contains("agent") ||
-                            ln.Contains("ai") ||
-                            ln.Contains("move") ||
-                            ln.Contains("locomotion");
-
-                        if (!looksLikeMover)
-                            continue;
-
-                        try
-                        {
-                            bool disabledByReflection = false;
-
-                            PropertyInfo pEnabled = t.GetProperty("enabled", BINDING_FLAGS);
-                            if (pEnabled != null && pEnabled.CanWrite && pEnabled.PropertyType == typeof(bool))
-                            {
-                                pEnabled.SetValue(mb, false, null);
-                                disabledByReflection = true;
-                            }
-                            else
-                            {
-                                FieldInfo fEnabled = t.GetField("enabled", BINDING_FLAGS);
-                                if (fEnabled != null && fEnabled.FieldType == typeof(bool))
-                                {
-                                    fEnabled.SetValue(mb, false);
-                                    disabledByReflection = true;
-                                }
-                            }
-
-                            if (!disabledByReflection)
-                            {
-                                mb.enabled = false;
-                            }
-
-                            Debug.Log("[DeathNote] FreezeCorpse: mover/AI disabled - " + t.FullName);
-                        }
-                        catch (Exception exMover)
-                        {
-                            Debug.Log("[DeathNote] FreezeCorpse mover disable 예외(" + t.FullName + "): " + exMover);
-                        }
-                    }
-                }
             }
             catch (Exception exOuter)
             {
-                Debug.Log("[DeathNote] FreezeCorpseComponents 전체 예외: " + exOuter);
+                Debug.Log("[DeathNote] FreezeCorpseComponents 예외: " + exOuter);
+            }
+        }
+
+        // ───── 전리품/사망 처리 메서드 반사 호출 ─────
+        private void CallDeathMethodsOnAttachedComponents(Component target)
+        {
+            if (target == null) return;
+            GameObject go = target.gameObject;
+            if (go == null) return;
+
+            bool anyCalled = false;
+
+            try
+            {
+                MonoBehaviour[] comps = go.GetComponentsInChildren<MonoBehaviour>(true);
+                if (comps != null && comps.Length > 0)
+                {
+                    for (int i = 0; i < comps.Length; i++)
+                    {
+                        MonoBehaviour comp = comps[i];
+                        if (comp == null) continue;
+
+                        Type t = comp.GetType();
+                        MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
+                        for (int j = 0; j < methods.Length; j++)
+                        {
+                            MethodInfo m = methods[j];
+                            if (m == null) continue;
+                            if (m.IsSpecialName) continue;
+                            if (m.GetParameters().Length != 0) continue;
+
+                            string ln = m.Name.ToLowerInvariant();
+                            if (ln.Contains("ondead") ||
+                                ln.Contains("ondeath") ||
+                                ln.Contains("dead") ||
+                                ln.Contains("death") ||
+                                ln.Contains("droploot") ||
+                                ln.Contains("loot"))
+                            {
+                                try
+                                {
+                                    m.Invoke(comp, null);
+                                    anyCalled = true;
+                                    Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents: " +
+                                              t.Name + "." + m.Name + "()");
+                                }
+                                catch (Exception exInner)
+                                {
+                                    Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents inner 예외: " + exInner);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents 호출됨, anyCalled=" + anyCalled);
+            }
+            catch (Exception ex)
+            {
+                Debug.Log("[DeathNote] CallDeathMethodsOnAttachedComponents 예외: " + ex);
             }
         }
 
@@ -1726,194 +1881,6 @@ namespace deathnote
             {
                 Type t = health.GetType();
 
-                // 프로퍼티
-                PropertyInfo[] props = t.GetProperties(BINDING_FLAGS);
-                for (int i = 0; i < props.Length; i++)
-                {
-                    PropertyInfo p = props[i];
-                    if (p == null || !p.CanRead || !p.CanWrite) continue;
-
-                    Type pt = p.PropertyType;
-                    string n = p.Name.ToLowerInvariant();
-
-                    if (pt == typeof(bool))
-                    {
-                        object v = p.GetValue(health, null);
-                        bool cur = v is bool b && b;
-
-                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
-                        {
-                            if (!cur) p.SetValue(health, true, null);
-                        }
-                        else if (n.Contains("alive"))
-                        {
-                            if (cur) p.SetValue(health, false, null);
-                        }
-                    }
-                    else if (pt == typeof(int))
-                    {
-                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
-                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
-                        {
-                            object v = p.GetValue(health, null);
-                            int cur = (v is int) ? (int)v : 0;
-                            if (cur > 0) p.SetValue(health, -1, null);
-                        }
-                    }
-                    else if (pt == typeof(float))
-                    {
-                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
-                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
-                        {
-                            object v = p.GetValue(health, null);
-                            float cur = (v is float) ? (float)v : 0f;
-                            if (cur > 0f) p.SetValue(health, -1f, null);
-                        }
-                    }
-                }
-
-                // 필드
-                FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
-                for (int i = 0; i < fields.Length; i++)
-                {
-                    FieldInfo f = fields[i];
-                    if (f == null) continue;
-
-                    Type ft = f.FieldType;
-                    string n = f.Name.ToLowerInvariant();
-
-                    if (ft == typeof(bool))
-                    {
-                        object v = f.GetValue(health);
-                        bool cur = v is bool b && b;
-
-                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
-                        {
-                            if (!cur) f.SetValue(health, true);
-                        }
-                        else if (n.Contains("alive"))
-                        {
-                            if (cur) f.SetValue(health, false);
-                        }
-                    }
-                }
-
-                for (int i = 0; i < fields.Length; i++)
-                {
-                    FieldInfo f = fields[i];
-                    if (f == null) continue;
-
-                    Type ft = f.FieldType;
-                    string n = f.Name.ToLowerInvariant();
-
-                    if (ft == typeof(int))
-                    {
-                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
-                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
-                        {
-                            object v = f.GetValue(health);
-                            int cur = (v is int) ? (int)v : 0;
-                            if (cur > 0) f.SetValue(health, -1);
-                        }
-                    }
-                    else if (ft == typeof(float))
-                    {
-                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
-                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
-                        {
-                            object v = f.GetValue(health);
-                            float cur = (v is float) ? (float)v : 0f;
-                            if (cur > 0f) f.SetValue(health, -1f);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] EnsureHealthStaysDead 예외: " + ex);
-            }
-        }
-
-        // ───── Health 강제 킬 ─────
-        private bool KillByHealthReflection(Health health)
-        {
-            if (health == null) return false;
-
-            Type t = health.GetType();
-            bool changed = false;
-
-            // 1) Kill/Die/Death/Dead 메서드(파라미터 없음)
-            try
-            {
-                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
-                for (int i = 0; i < methods.Length; i++)
-                {
-                    MethodInfo m = methods[i];
-                    if (m == null) continue;
-
-                    if (m.IsSpecialName)
-                        continue;
-
-                    if (m.GetParameters().Length != 0)
-                        continue;
-
-                    string ln = m.Name.ToLowerInvariant();
-                    if (ln.Contains("kill") || ln.Contains("die") || ln.Contains("death") || ln.Contains("dead"))
-                    {
-                        Debug.Log("[DeathNote] KillByHealthReflection: 메서드 호출 -> " + t.Name + "." + m.Name + "()");
-                        m.Invoke(health, null);
-                        return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] KillByHealthReflection direct method 예외: " + ex);
-            }
-
-            // 2) Damage/Hit(숫자 1개) 메서드
-            try
-            {
-                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
-                for (int i = 0; i < methods.Length; i++)
-                {
-                    MethodInfo m = methods[i];
-                    if (m == null) continue;
-
-                    if (m.IsSpecialName)
-                        continue;
-
-                    ParameterInfo[] ps = m.GetParameters();
-                    if (ps == null || ps.Length != 1)
-                        continue;
-
-                    string ln = m.Name.ToLowerInvariant();
-                    if (!(ln.Contains("damage") || ln.Contains("hit")))
-                        continue;
-
-                    Type pt = ps[0].ParameterType;
-                    object big;
-                    if (pt == typeof(int))
-                        big = 999999;
-                    else if (pt == typeof(float))
-                        big = 999999f;
-                    else
-                        continue;
-
-                    Debug.Log("[DeathNote] KillByHealthReflection: 데미지 메서드 호출 -> " +
-                              t.Name + "." + m.Name + "(" + big + ")");
-                    m.Invoke(health, new object[] { big });
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] KillByHealthReflection damage method 예외: " + ex);
-            }
-
-            // 3) 프로퍼티/필드 강제 조작
-            try
-            {
                 PropertyInfo[] props = t.GetProperties(BINDING_FLAGS);
                 for (int i = 0; i < props.Length; i++)
                 {
@@ -1928,14 +1895,10 @@ namespace deathnote
                         if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
                         {
                             p.SetValue(health, true, null);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByHealthReflection: bool 프로퍼티 true -> " + t.Name + "." + p.Name);
                         }
                         else if (n.Contains("alive"))
                         {
                             p.SetValue(health, false, null);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByHealthReflection: bool 프로퍼티 false -> " + t.Name + "." + p.Name);
                         }
                     }
                     else if (pt == typeof(int) || pt == typeof(float))
@@ -1947,9 +1910,6 @@ namespace deathnote
                                 p.SetValue(health, -1, null);
                             else
                                 p.SetValue(health, -1f, null);
-
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByHealthReflection: hp/health 프로퍼티 -1 -> " + t.Name + "." + p.Name);
                         }
                     }
                 }
@@ -1968,27 +1928,13 @@ namespace deathnote
                         if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
                         {
                             f.SetValue(health, true);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByHealthReflection: bool 필드 true -> " + t.Name + "." + f.Name);
                         }
                         else if (n.Contains("alive"))
                         {
                             f.SetValue(health, false);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByHealthReflection: bool 필드 false -> " + t.Name + "." + f.Name);
                         }
                     }
-                }
-
-                for (int i = 0; i < fields.Length; i++)
-                {
-                    FieldInfo f = fields[i];
-                    if (f == null) continue;
-
-                    Type ft = f.FieldType;
-                    string n = f.Name.ToLowerInvariant();
-
-                    if (ft == typeof(int) || ft == typeof(float))
+                    else if (ft == typeof(int) || ft == typeof(float))
                     {
                         if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
                             !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
@@ -1997,194 +1943,14 @@ namespace deathnote
                                 f.SetValue(health, -1);
                             else
                                 f.SetValue(health, -1f);
-
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByHealthReflection: hp/health 필드 -1 -> " + t.Name + "." + f.Name);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.Log("[DeathNote] KillByHealthReflection 필드/프로퍼티 조작 예외: " + ex);
+                Debug.Log("[DeathNote] EnsureHealthStaysDead 예외: " + ex);
             }
-
-            return changed;
-        }
-
-        // ───── CharacterMainControl 강제 킬 ─────
-        private bool KillByCharacterReflection(CharacterMainControl character)
-        {
-            if (character == null) return false;
-
-            Type t = character.GetType();
-            bool changed = false;
-
-            try
-            {
-                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
-                for (int i = 0; i < methods.Length; i++)
-                {
-                    MethodInfo m = methods[i];
-                    if (m == null) continue;
-
-                    if (m.IsSpecialName)
-                        continue;
-
-                    if (m.GetParameters().Length != 0)
-                        continue;
-
-                    string ln = m.Name.ToLowerInvariant();
-                    if (ln.Contains("kill") || ln.Contains("die") || ln.Contains("death") || ln.Contains("dead"))
-                    {
-                        Debug.Log("[DeathNote] KillByCharacterReflection: 메서드 호출 -> " + t.Name + "." + m.Name + "()");
-                        m.Invoke(character, null);
-                        return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] KillByCharacterReflection direct method 예외: " + ex);
-            }
-
-            try
-            {
-                MethodInfo[] methods = t.GetMethods(BINDING_FLAGS);
-                for (int i = 0; i < methods.Length; i++)
-                {
-                    MethodInfo m = methods[i];
-                    if (m == null) continue;
-
-                    if (m.IsSpecialName)
-                        continue;
-
-                    ParameterInfo[] ps = m.GetParameters();
-                    if (ps == null || ps.Length != 1)
-                        continue;
-
-                    string ln = m.Name.ToLowerInvariant();
-                    if (!(ln.Contains("damage") || ln.Contains("hit")))
-                        continue;
-
-                    Type pt = ps[0].ParameterType;
-                    object big;
-                    if (pt == typeof(int))
-                        big = 999999;
-                    else if (pt == typeof(float))
-                        big = 999999f;
-                    else
-                        continue;
-
-                    Debug.Log("[DeathNote] KillByCharacterReflection: 데미지 메서드 호출 -> " +
-                              t.Name + "." + m.Name + "(" + big + ")");
-                    m.Invoke(character, new object[] { big });
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] KillByCharacterReflection damage method 예외: " + ex);
-            }
-
-            try
-            {
-                PropertyInfo[] props = t.GetProperties(BINDING_FLAGS);
-                for (int i = 0; i < props.Length; i++)
-                {
-                    PropertyInfo p = props[i];
-                    if (p == null || !p.CanWrite) continue;
-
-                    Type pt = p.PropertyType;
-                    string n = p.Name.ToLowerInvariant();
-
-                    if (pt == typeof(bool))
-                    {
-                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
-                        {
-                            p.SetValue(character, true, null);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByCharacterReflection: bool 프로퍼티 true -> " + t.Name + "." + p.Name);
-                        }
-                        else if (n.Contains("alive"))
-                        {
-                            p.SetValue(character, false, null);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByCharacterReflection: bool 프로퍼티 false -> " + t.Name + "." + p.Name);
-                        }
-                    }
-                    else if (pt == typeof(int) || pt == typeof(float))
-                    {
-                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
-                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
-                        {
-                            if (pt == typeof(int))
-                                p.SetValue(character, -1, null);
-                            else
-                                p.SetValue(character, -1f, null);
-
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByCharacterReflection: hp/health 프로퍼티 -1 -> " + t.Name + "." + p.Name);
-                        }
-                    }
-                }
-
-                FieldInfo[] fields = t.GetFields(BINDING_FLAGS);
-                for (int i = 0; i < fields.Length; i++)
-                {
-                    FieldInfo f = fields[i];
-                    if (f == null) continue;
-
-                    Type ft = f.FieldType;
-                    string n = f.Name.ToLowerInvariant();
-
-                    if (ft == typeof(bool))
-                    {
-                        if (n.Contains("dead") || n.Contains("isdead") || n.Contains("is_dead"))
-                        {
-                            f.SetValue(character, true);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByCharacterReflection: bool 필드 true -> " + t.Name + "." + f.Name);
-                        }
-                        else if (n.Contains("alive"))
-                        {
-                            f.SetValue(character, false);
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByCharacterReflection: bool 필드 false -> " + t.Name + "." + f.Name);
-                        }
-                    }
-                }
-
-                for (int i = 0; i < fields.Length; i++)
-                {
-                    FieldInfo f = fields[i];
-                    if (f == null) continue;
-
-                    Type ft = f.FieldType;
-                    string n = f.Name.ToLowerInvariant();
-
-                    if (ft == typeof(int) || ft == typeof(float))
-                    {
-                        if ((n.Contains("hp") || n.Contains("health") || n.Contains("current")) &&
-                            !n.Contains("max") && !n.Contains("hash") && !n.Contains("height"))
-                        {
-                            if (ft == typeof(int))
-                                f.SetValue(character, -1);
-                            else
-                                f.SetValue(character, -1f);
-
-                            changed = true;
-                            Debug.Log("[DeathNote] KillByCharacterReflection: hp/health 필드 -1 -> " + t.Name + "." + f.Name);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("[DeathNote] KillByCharacterReflection 필드/프로퍼티 조작 예외: " + ex);
-            }
-
-            return changed;
         }
     }
 }
