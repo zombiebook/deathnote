@@ -706,10 +706,11 @@ namespace deathnote
             GUILayout.BeginArea(inner, _noteInnerStyle);
             GUILayout.BeginVertical();
 
+            // 제목
             GUILayout.Label(GetUITitleText(), _titleStyle);
             GUILayout.Space(8f);
 
-            // ★ 네가 기억해 달라고 한 문구 - 한국어일 때는 Literal 그대로 사용
+            // ★ 네가 기억해 달라고 한 문구 (한국어일 때만 고정 문구 사용)
             if (GetUILang() == DeathNoteUILang.Korean)
             {
                 GUILayout.Label("보스 이름을 정확히 입력하고 작성을 누르세요.", _labelStyle);
@@ -719,13 +720,14 @@ namespace deathnote
                 GUILayout.Label(GetUIDescriptionText(), _labelStyle);
             }
 
-            // ───── 여기부터: TextField + 깜빡이는 '|' 커서 ─────
+            // 포커스 설정
             if (_justOpened)
             {
                 GUI.FocusControl("DeathNoteInput");
                 _justOpened = false;
             }
 
+            // ── 입력란 + 깜빡이는 | 커서 ──
             GUI.SetNextControlName("DeathNoteInput");
             bool isFocused = (GUI.GetNameOfFocusedControl() == "DeathNoteInput");
 
@@ -743,26 +745,34 @@ namespace deathnote
 
             string edited = GUILayout.TextField(displayText, _textFieldStyle);
 
-            // 실제 입력 값에는 '|'가 들어가지 않게 제거
+            // 실제 값에는 | 안 들어가게 제거
             if (isFocused && !string.IsNullOrEmpty(edited))
             {
                 edited = edited.Replace("|", string.Empty);
             }
 
             _inputName = edited;
-            // ───── TextField + 깜빡이 커서 끝 ─────
 
+            // ── 입력란 아래 가로 실선 ──
+            Rect textRect = GUILayoutUtility.GetLastRect();
+            float lineY = textRect.yMax + 2f;           // 입력칸 바로 아래 조금 띄워서
+            Rect lineRect = new Rect(textRect.x, lineY, textRect.width, 1f);
+            GUI.DrawTexture(lineRect, _texBlack);       // 검은 1px 라인
+            GUILayout.Space(10f);
+            // ────────────────────────
+
+            // Enter로도 제출 가능
             Event e = Event.current;
             bool submitByEnter =
                 (e.type == EventType.KeyDown &&
                  (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter));
 
-            GUILayout.Space(8f);
             if (GUILayout.Button(GetUIButtonText(), _buttonStyle) || submitByEnter)
             {
                 SubmitName();
             }
 
+            // 이미 예약된 대상
             if (_pendingTarget != null && _pendingTimer > 0f)
             {
                 GUILayout.Space(10f);
@@ -780,6 +790,7 @@ namespace deathnote
             GUILayout.EndVertical();
             GUILayout.EndArea();
         }
+
 
         private void DrawTopLeftCountdown()
         {
